@@ -1,0 +1,20 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hr-app-api
+    ports:
+      - "8000:8000"
+    environment:
+      HR_APP_DB_PATH: /data/mydatabase.db
+      HR_APP_ADMIN_TOKENS: ${HR_APP_ADMIN_TOKENS:-dev-token}
+      HR_APP_JWT_SECRET: ${HR_APP_JWT_SECRET:-change-me-in-production}
+      HR_APP_ACCESS_TOKEN_MINUTES: ${HR_APP_ACCESS_TOKEN_MINUTES:-30}
+      HR_APP_REFRESH_TOKEN_DAYS: ${HR_APP_REFRESH_TOKEN_DAYS:-7}
+    volumes:
+      - hr_app_data:/data
+    restart: unless-stopped
+
+volumes:
+  hr_app_data:
