@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class HealthResponse(BaseModel):
@@ -42,8 +42,8 @@ class JobOut(BaseModel):
 
 
 class JobCreate(BaseModel):
-    job_number: str
-    job_title: str
+    job_number: str = Field(min_length=1, max_length=50)
+    job_title: str = Field(min_length=1, max_length=200)
 
 
 class BulkJobCreateResponse(BaseModel):
@@ -70,14 +70,21 @@ class EmployeeCreate(BaseModel):
 
     id: str | None = None
     job_number: str | None = Field(default=None, alias="jobNumber")
-    full_name: str = Field(alias="fullName")
-    team: str
-    location: str
+    full_name: str = Field(alias="fullName", min_length=1, max_length=200)
+    team: str = Field(min_length=1, max_length=100)
+    location: str = Field(min_length=1, max_length=100)
     avatar_url: str | None = Field(default=None, alias="avatarUrl")
-    status: str
+    status: Literal["active", "pipeline", "away", "offline"]
     service: str | None = None
     grade: str | None = None
     appraisal_due_date: str | None = Field(default=None, alias="appraisalDueDate")
+
+    @field_validator("full_name", "team", "location", mode="before")
+    @classmethod
+    def _strip_required_text(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
 
 class EmployeeUpdate(BaseModel):
@@ -85,11 +92,11 @@ class EmployeeUpdate(BaseModel):
 
     job_number: str | None = Field(default=None, alias="jobNumber")
     job_title: str | None = Field(default=None, alias="jobTitle")
-    full_name: str | None = Field(default=None, alias="fullName")
-    team: str | None = None
-    location: str | None = None
+    full_name: str | None = Field(default=None, alias="fullName", min_length=1, max_length=200)
+    team: str | None = Field(default=None, min_length=1, max_length=100)
+    location: str | None = Field(default=None, min_length=1, max_length=100)
     avatar_url: str | None = Field(default=None, alias="avatarUrl")
-    status: str | None = None
+    status: Literal["active", "pipeline", "away", "offline"] | None = None
     service: str | None = None
     grade: str | None = None
     appraisal_due_date: str | None = Field(default=None, alias="appraisalDueDate")
@@ -98,9 +105,9 @@ class EmployeeUpdate(BaseModel):
 class UserCreate(BaseModel):
     id: str | None = None
     employee_id: str | None = None
-    email: str
-    password: str
-    full_name: str = Field(alias="fullName")
+    email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    password: str = Field(min_length=8)
+    full_name: str = Field(alias="fullName", min_length=1, max_length=200)
     role: str | None = None
     job_title: str | None = Field(default=None, alias="jobTitle")
     team: str | None = None
@@ -125,8 +132,8 @@ class UserUpdate(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
 
 
 class RefreshTokenRequest(BaseModel):
@@ -156,10 +163,17 @@ class AuthTokenResponse(BaseModel):
 class NominationCreate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    nominator_name: str = Field(alias="nominatorName")
-    nominator_team: str = Field(alias="nominatorTeam")
-    nominee_employee_id: str = Field(alias="nomineeEmployeeId")
-    nomination_text: str = Field(alias="nominationText")
+    nominator_name: str = Field(alias="nominatorName", min_length=1, max_length=200)
+    nominator_team: str = Field(alias="nominatorTeam", min_length=1, max_length=100)
+    nominee_employee_id: str = Field(alias="nomineeEmployeeId", min_length=1, max_length=100)
+    nomination_text: str = Field(alias="nominationText", min_length=10, max_length=5000)
+
+    @field_validator("nominator_name", "nominator_team", "nomination_text", mode="before")
+    @classmethod
+    def _strip_text_fields(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip()
+        return v
 
 
 class NominationOut(BaseModel):
