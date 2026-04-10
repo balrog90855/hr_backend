@@ -304,6 +304,21 @@ def _build_filters(base_query: str, where_clauses: list[str], order_clause: str)
     return f"{base_query}{where_sql} {order_clause} LIMIT ? OFFSET ?"
 
 
+def migrate_employee_appraisal_fields_if_needed() -> None:
+    """Add service, grade, and appraisal_due_date columns to employees if absent."""
+    with get_connection() as conn:
+        existing_cols = {col["name"] for col in conn.execute("PRAGMA table_info(employees)").fetchall()}
+        if all(col in existing_cols for col in ("service", "grade", "appraisal_due_date")):
+            return
+        if "service" not in existing_cols:
+            conn.execute("ALTER TABLE employees ADD COLUMN service TEXT")
+        if "grade" not in existing_cols:
+            conn.execute("ALTER TABLE employees ADD COLUMN grade TEXT")
+        if "appraisal_due_date" not in existing_cols:
+            conn.execute("ALTER TABLE employees ADD COLUMN appraisal_due_date TEXT")
+        conn.commit()
+
+
 def fetch_employees(
     limit: int = 50,
     offset: int = 0,
@@ -311,6 +326,8 @@ def fetch_employees(
     status: str | None = None,
     team: str | None = None,
     location: str | None = None,
+    service: str | None = None,
+    grade: str | None = None,
     search: str | None = None,
 ) -> list[dict[str, Any]]:
     params: list[Any] = []
@@ -325,6 +342,12 @@ def fetch_employees(
     if location:
         where.append("e.location = ?")
         params.append(location)
+    if service:
+        where.append("e.service = ?")
+        params.append(service)
+    if grade:
+        where.append("e.grade = ?")
+        params.append(grade)
     if search:
         where.append("(e.full_name LIKE ? OR COALESCE(j.job_title, '') LIKE ? OR COALESCE(e.job_number, '') LIKE ?)")
         like = f"%{search}%"
@@ -333,7 +356,9 @@ def fetch_employees(
     query = _build_filters(
         """
         SELECT e.id, e.job_number, e.full_name, j.job_title, e.team,
-               e.location, e.avatar_url, e.status, e.created_at, e.updated_at
+               e.location, e.avatar_url, e.status,
+               e.service, e.grade, e.appraisal_due_date,
+               e.created_at, e.updated_at
         FROM employees e
         LEFT JOIN jobs j ON j.job_number = e.job_number
         """,
@@ -466,7 +491,9 @@ def fetch_employee_by_id(employee_id: str) -> dict[str, Any] | None:
         return conn.execute(
             """
             SELECT e.id, e.job_number, e.full_name, j.job_title, e.team,
-                   e.location, e.avatar_url, e.status, e.created_at, e.updated_at
+                   e.location, e.avatar_url, e.status,
+                   e.service, e.grade, e.appraisal_due_date,
+                   e.created_at, e.updated_at
             FROM employees e
             LEFT JOIN jobs j ON j.job_number = e.job_number
             WHERE e.id = ?
@@ -488,9 +515,11 @@ def create_employee(data: dict[str, Any]) -> dict[str, Any]:
         conn.execute(
             """
             INSERT INTO employees (
-                id, job_number, full_name, team, location, avatar_url, status, created_at, updated_at
+                id, job_number, full_name, team, location, avatar_url, status,
+                service, grade, appraisal_due_date,
+                created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 employee_id,
@@ -500,6 +529,9 @@ def create_employee(data: dict[str, Any]) -> dict[str, Any]:
                 data["location"],
                 data.get("avatar_url"),
                 data["status"],
+                data.get("service"),
+                data.get("grade"),
+                data.get("appraisal_due_date"),
                 data.get("created_at") or now,
                 data.get("updated_at") or now,
             ),
@@ -521,6 +553,9 @@ def update_employee(employee_id: str, updates: dict[str, Any]) -> dict[str, Any]
         "location",
         "avatar_url",
         "status",
+        "service",
+        "grade",
+        "appraisal_due_date",
     }
     clean_updates = {k: v for k, v in updates.items() if k in allowed_fields}
     job_title = updates.get("job_title")

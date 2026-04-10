@@ -30,6 +30,9 @@ class EmployeeOut(BaseModel):
     location: str
     avatar_url: str | None = None
     status: str
+    service: str | None = None
+    grade: str | None = None
+    appraisal_due_date: str | None = None
 
 
 class JobOut(BaseModel):
@@ -72,6 +75,9 @@ class EmployeeCreate(BaseModel):
     location: str
     avatar_url: str | None = Field(default=None, alias="avatarUrl")
     status: str
+    service: str | None = None
+    grade: str | None = None
+    appraisal_due_date: str | None = Field(default=None, alias="appraisalDueDate")
 
 
 class EmployeeUpdate(BaseModel):
@@ -84,6 +90,9 @@ class EmployeeUpdate(BaseModel):
     location: str | None = None
     avatar_url: str | None = Field(default=None, alias="avatarUrl")
     status: str | None = None
+    service: str | None = None
+    grade: str | None = None
+    appraisal_due_date: str | None = Field(default=None, alias="appraisalDueDate")
 
 
 class UserCreate(BaseModel):

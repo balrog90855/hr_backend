@@ -10,6 +10,7 @@ from app.database import (
     DB_PATH,
     get_table_names,
     initialize_database,
+    migrate_employee_appraisal_fields_if_needed,
     migrate_team_constraints_if_needed,
     migrate_users_employee_link_if_needed,
 )
@@ -28,6 +29,7 @@ def startup_initialize_database() -> None:
     initialize_database()
     migrate_team_constraints_if_needed()
     migrate_users_employee_link_if_needed()
+    migrate_employee_appraisal_fields_if_needed()
     logger.info("Database ready at %s with tables: %s", DB_PATH, ", ".join(get_table_names()))
 
 app.add_middleware(

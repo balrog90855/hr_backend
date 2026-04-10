@@ -26,6 +26,8 @@ def list_employees(
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     team: str | None = None,
     location: str | None = None,
+    service: str | None = None,
+    grade: str | None = None,
     search: str | None = None,
 ) -> list[EmployeeOut]:
     rows = fetch_employees(
@@ -34,6 +36,8 @@ def list_employees(
         status=status_filter,
         team=team,
         location=location,
+        service=service,
+        grade=grade,
         search=search,
     )
     return [EmployeeOut.model_validate(r) for r in rows]
