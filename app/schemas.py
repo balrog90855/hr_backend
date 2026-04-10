@@ -151,3 +151,24 @@ class AuthTokenResponse(BaseModel):
     access_token: str
     access_token_expires_in: int
     refresh_token: str
+
+
+class NominationCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    nominator_name: str = Field(alias="nominatorName")
+    nominator_team: str = Field(alias="nominatorTeam")
+    nominee_employee_id: str = Field(alias="nomineeEmployeeId")
+    nomination_text: str = Field(alias="nominationText")
+
+
+class NominationOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int
+    nominator_name: str = Field(serialization_alias="nominatorName")
+    nominator_team: str = Field(serialization_alias="nominatorTeam")
+    nominee_employee_id: str = Field(serialization_alias="nomineeEmployeeId")
+    nominee_name: str = Field(serialization_alias="nomineeName")
+    nomination_text: str = Field(serialization_alias="nominationText")
+    created_at: str = Field(serialization_alias="createdAt")

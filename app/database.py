@@ -111,11 +111,22 @@ def initialize_database() -> None:
                     ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS nominations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nominator_name TEXT NOT NULL,
+                nominator_team TEXT NOT NULL,
+                nominee_employee_id TEXT NOT NULL,
+                nominee_name TEXT NOT NULL,
+                nomination_text TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             CREATE INDEX IF NOT EXISTS idx_employees_job_number ON employees(job_number);
             CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
             CREATE INDEX IF NOT EXISTS idx_users_employee_id ON users(employee_id);
             CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
             CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+            CREATE INDEX IF NOT EXISTS idx_nominations_created_at ON nominations(created_at);
             """
         )
         conn.commit()
@@ -893,3 +904,38 @@ def revoke_refresh_token(token: str) -> bool:
         )
         conn.commit()
         return result.rowcount > 0
+
+
+def create_nomination(
+    nominator_name: str,
+    nominator_team: str,
+    nominee_employee_id: str,
+    nominee_name: str,
+    nomination_text: str,
+) -> dict[str, Any]:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO nominations (
+                nominator_name, nominator_team, nominee_employee_id,
+                nominee_name, nomination_text
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (nominator_name, nominator_team, nominee_employee_id, nominee_name, nomination_text),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM nominations WHERE id = ? LIMIT 1",
+            (cursor.lastrowid,),
+        ).fetchone()
+    if row is None:
+        raise RuntimeError("Failed to create nomination")
+    return row
+
+
+def fetch_nominations() -> list[dict[str, Any]]:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT * FROM nominations ORDER BY created_at DESC"
+        ).fetchall()

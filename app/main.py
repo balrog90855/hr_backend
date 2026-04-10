@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, employees, jobs, routes, users
+from app.api import auth, employees, jobs, nominations, routes, users
 from app.database import (
     DB_PATH,
     get_table_names,
@@ -45,3 +45,4 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(employees.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
+app.include_router(nominations.router, prefix="/api")
