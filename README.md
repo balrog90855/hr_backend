@@ -9,6 +9,12 @@ This project exposes authenticated API endpoints backed by a MySQL database.
 pip install -r requirements.txt
 ```
 
+Supported runtime baseline:
+
+- Python `3.10`
+- Dependency pins selected from versions that were already available by April 2025
+- MySQL `8.0`
+
 ## Run
 
 ```powershell
@@ -23,13 +29,34 @@ Build and run with Docker Compose:
 docker compose up --build
 ```
 
+The Docker image installs Python packages from `wheelhouse/openshift-py310/` and does not contact PyPI during the build.
+
 The API will be available at `http://localhost:8000`.
 
 Container defaults:
 
+- Python 3.10 base image
 - MySQL 8.0 database stored in the `db_data` Docker volume
 - API exposed on port `8000`
 - Configured with environment variables from `docker-compose.yml`
+
+## Offline Deployment Notes
+
+The backend is pinned to a Python 3.10-compatible dependency set intended for environments that cannot rely on the latest package releases.
+
+For fully offline builds, pre-download or mirror the pinned wheels for your target platform before deployment. The checked-in `wheelhouse/` directory currently contains Windows and newer-Python artifacts, so it should not be treated as a ready-to-use Linux Python 3.10 package source.
+
+For a Linux offline build target, prepare wheels for the versions in `requirements.txt` using a Python 3.10 environment on the target architecture, then install from that mirrored source during deployment.
+
+An OpenShift-oriented wheel set is now available under `wheelhouse/openshift-py310/`.
+
+Offline install example:
+
+```powershell
+pip install --no-index --find-links wheelhouse/openshift-py310 -r requirements.txt
+```
+
+This wheelhouse targets Linux `x86_64` with Python `3.10` and `manylinux2014`-compatible wheels, which aligns with common Red Hat OpenShift deployments.
 
 To override secrets and token settings, create a local `.env` file based on `.env.example` before starting the stack.
 

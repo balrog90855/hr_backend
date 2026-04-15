@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Iterator
 from uuid import uuid4
 
@@ -38,7 +38,7 @@ def _normalize_nomination_row(row: dict[str, Any] | None) -> dict[str, Any] | No
 
 
 def _utc_now_naive() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # 🔹 DB CONNECTION

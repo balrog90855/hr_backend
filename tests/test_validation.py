@@ -2,14 +2,14 @@
 Input validation tests for the HR App backend.
 
 Covers two layers:
-  1. Schema tests – Pydantic ValidationErrors raised directly, no HTTP round-trip.
+    1. Schema tests – Pydantic ValidationErrors raised directly, no HTTP round-trip.
     2. API tests    – FastAPI TestClient sends HTTP requests through the route
                                         layer with database helpers stubbed so validation,
                                         auth, and endpoint wiring are exercised without a live DB.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -430,7 +430,7 @@ class TestAuthRefreshAndLogout:
             "token": token,
             "user_id": "user-1",
             "revoked_at": None,
-            "expires_at": datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1),
+            "expires_at": datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1),
         })
         monkeypatch.setattr(auth, "fetch_user_auth_by_id", lambda user_id: {
             "id": user_id,
@@ -441,7 +441,7 @@ class TestAuthRefreshAndLogout:
         })
         monkeypatch.setattr(auth, "revoke_refresh_token", lambda token: revoked_tokens.append(token) or True)
         monkeypatch.setattr(auth, "build_refresh_token", lambda: "rt_new_token")
-        monkeypatch.setattr(auth, "refresh_token_expiry", lambda: datetime.now(UTC).replace(tzinfo=None) + timedelta(days=7))
+        monkeypatch.setattr(auth, "refresh_token_expiry", lambda: datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=7))
         monkeypatch.setattr(auth, "create_access_token", lambda user_id, email, role: ("access-token", 1800))
         monkeypatch.setattr(
             auth,

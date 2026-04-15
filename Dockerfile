@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.10-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -6,9 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt ./
+COPY wheelhouse/openshift-py310 /wheelhouse
 
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --no-index --find-links=/wheelhouse -r requirements.txt \
+    && rm -rf /wheelhouse
 
 COPY app ./app
 

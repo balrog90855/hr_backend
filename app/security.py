@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from secrets import compare_digest
 from typing import Any
 
@@ -14,7 +14,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=Fals
 
 
 def _utc_now_naive() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _parse_tokens(value: str | None) -> set[str]:
@@ -82,7 +82,7 @@ def _normalize_role(role: str | None) -> str:
 
 def create_access_token(user_id: str, email: str, role: str) -> tuple[str, int]:
     expires_in = _access_minutes() * 60
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     normalized_role = _normalize_role(role)
     payload = {
         "sub": user_id,

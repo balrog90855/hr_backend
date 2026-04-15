@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from importlib.resources import files
 import logging
 import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-import pkg_resources
 
 from app.api import auth, employees, jobs, nominations, routes, users
 from app.database import initialize_database
@@ -28,8 +28,8 @@ app = FastAPI(
 
 # Mount Swagger UI static files from swagger-ui-py package
 try:
-    swagger_ui_path = pkg_resources.resource_filename("swagger_ui", "static")
-    app.mount("/static", StaticFiles(directory=swagger_ui_path), name="static")
+    swagger_ui_path = files("swagger_ui").joinpath("static")
+    app.mount("/static", StaticFiles(directory=str(swagger_ui_path)), name="static")
     logger.info("Swagger UI mounted from local assets at %s", swagger_ui_path)
 except Exception as e:
     logger.warning("Could not mount local Swagger UI assets: %s", e)
