@@ -15,13 +15,13 @@ def submit_nomination(body: NominationCreate) -> NominationOut:
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    row = create_nomination(
-        nominator_name=body.nominator_name,
-        nominator_team=body.nominator_team,
-        nominee_employee_id=body.nominee_employee_id,
-        nominee_name=str(employee["full_name"]),
-        nomination_text=body.nomination_text,
-    )
+    row = create_nomination({
+        "nominator_name": body.nominator_name,
+        "nominator_team": body.nominator_team,
+        "nominee_employee_id": body.nominee_employee_id,
+        "nominee_name": str(employee["full_name"]),
+        "nomination_text": body.nomination_text,
+    })
     return NominationOut.model_validate(row)
 
 

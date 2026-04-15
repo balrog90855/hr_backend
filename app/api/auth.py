@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
@@ -13,13 +13,21 @@ from app.security import (
     user_role_from_db,
     verify_password,
 )
-from app.database import create_refresh_token, fetch_user_auth_by_email
-
-BLOCKED_AUTH_STATUSES = {"inactive", "disabled", "locked", "suspended"}
+from app.database import (
+    create_refresh_token,
+    fetch_refresh_token,
+    fetch_user_auth_by_email,
+    fetch_user_auth_by_id,
+    revoke_refresh_token,
+)
 
 BLOCKED_AUTH_STATUSES = {"inactive", "disabled", "locked", "suspended"}
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @router.post("/login", response_model=AuthTokenResponse)
@@ -93,7 +101,7 @@ def refresh_access_token(payload: RefreshTokenRequest) -> AuthTokenResponse:
         raise HTTPException(status_code=401, detail="Refresh token revoked")
 
     expires_at = datetime.fromisoformat(str(token_row["expires_at"]))
-    if expires_at <= datetime.utcnow():
+    if expires_at <= _utc_now_naive():
         raise HTTPException(status_code=401, detail="Refresh token expired")
 
     user = fetch_user_auth_by_id(token_row["user_id"])

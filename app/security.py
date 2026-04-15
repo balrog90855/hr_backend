@@ -13,6 +13,10 @@ from fastapi.security import OAuth2PasswordBearer
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=False)
 
 
+def _utc_now_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 def _parse_tokens(value: str | None) -> set[str]:
     if not value:
         return set()
@@ -93,7 +97,7 @@ def create_access_token(user_id: str, email: str, role: str) -> tuple[str, int]:
 
 
 def refresh_token_expiry() -> datetime:
-    return datetime.utcnow() + timedelta(days=_refresh_days())
+    return _utc_now_naive() + timedelta(days=_refresh_days())
 
 
 def build_refresh_token() -> str:

@@ -1,6 +1,6 @@
 # HR App FastAPI Backend
 
-This project exposes authenticated API endpoints over an existing SQLite database.
+This project exposes authenticated API endpoints backed by a MySQL database.
 
 ## Setup
 
@@ -27,7 +27,7 @@ The API will be available at `http://localhost:8000`.
 
 Container defaults:
 
-- SQLite database stored in a named Docker volume at `/data/mydatabase.db`
+- MySQL 8.0 database stored in the `db_data` Docker volume
 - API exposed on port `8000`
 - Configured with environment variables from `docker-compose.yml`
 
@@ -38,7 +38,7 @@ To override secrets and token settings, create a local `.env` file based on `.en
 ```
 app/
   main.py          # FastAPI app, middleware, router registration
-  database.py      # SQLite helpers
+	database.py      # MySQL helpers and schema initialization
   schemas.py       # Pydantic request/response models
   security.py      # JWT, hashing, auth dependencies
   api/
@@ -170,69 +170,20 @@ Token configuration:
 
 If no token env vars are set, default admin token is `dev-token`.
 
-## Database Path
+## Database Configuration
 
-By default, the app reads `mydatabase.db` from the workspace root.
+By default, the app connects to the MySQL service defined in `docker-compose.yml`.
 
-Override with environment variable:
+Database environment variables:
 
-- `HR_APP_DB_PATH`
+- `DB_HOST`
+- `DB_PORT`
+- `DB_USER`
+- `DB_PASSWORD`
+- `DB_NAME`
 - `HR_APP_API_TOKEN`
 - `HR_APP_ADMIN_TOKENS`
 - `HR_APP_READONLY_TOKENS`
 - `HR_APP_JWT_SECRET`
 - `HR_APP_ACCESS_TOKEN_MINUTES`
 - `HR_APP_REFRESH_TOKEN_DAYS`
-
-## SQLite Migration (`roles` -> `role`)
-
-If your `users` table previously used `roles`, migrate to a single `role` column.
-
-```sql
-BEGIN TRANSACTION;
-
-CREATE TABLE users_new (
-	id TEXT PRIMARY KEY,
-	employee_id TEXT NOT NULL,
-	email TEXT NOT NULL,
-	passwordHash TEXT NOT NULL,
-	fullName TEXT NOT NULL,
-	role TEXT NOT NULL DEFAULT 'employee',
-	jobTitle TEXT,
-	team TEXT,
-	avatarUrl TEXT,
-	status TEXT,
-	is_active INTEGER NOT NULL DEFAULT 1,
-	created_at TEXT,
-	updated_at TEXT,
-	last_login_at TEXT
-);
-
-INSERT INTO users_new (
-	id, employee_id, email, passwordHash, fullName, role, jobTitle, team,
-	avatarUrl, status, is_active, created_at, updated_at, last_login_at
-)
-SELECT
-	id,
-	employee_id,
-	email,
-	passwordHash,
-	fullName,
-	COALESCE(NULLIF(TRIM(roles), ''), 'employee') AS role,
-	jobTitle,
-	team,
-	avatarUrl,
-	status,
-	is_active,
-	created_at,
-	updated_at,
-	last_login_at
-FROM users;
-
-DROP TABLE users;
-ALTER TABLE users_new RENAME TO users;
-
-COMMIT;
-```
-
-After migration, restart the API.

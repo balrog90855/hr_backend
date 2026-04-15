@@ -3,14 +3,13 @@ Input validation tests for the HR App backend.
 
 Covers two layers:
   1. Schema tests – Pydantic ValidationErrors raised directly, no HTTP round-trip.
-  2. API tests    – FastAPI TestClient sends real HTTP requests against a
-                    temporary SQLite database so the full request pipeline
-                    (Pydantic → router → DB) is exercised.
+    2. API tests    – FastAPI TestClient sends HTTP requests through the route
+                                        layer with database helpers stubbed so validation,
+                                        auth, and endpoint wiring are exercised without a live DB.
 """
 from __future__ import annotations
 
-import os
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
@@ -271,24 +270,32 @@ class TestLoginRequestSchema:
 
 
 # ===========================================================================
-# 2. API ENDPOINT VALIDATION (TestClient + temporary SQLite database)
+# 2. API ENDPOINT VALIDATION (TestClient + route-level stubs)
 # ===========================================================================
 
-@pytest.fixture(scope="module")
-def api_client(tmp_path_factory):
-    """Yield a TestClient backed by an isolated temporary database."""
-    import app.database as db_module
+@pytest.fixture()
+def api_client(monkeypatch):
+    """Yield a TestClient with route dependencies stubbed for deterministic tests."""
+    from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    test_db: Path = tmp_path_factory.mktemp("db") / "test.db"
-    original_path = db_module.DB_PATH
-    db_module.DB_PATH = test_db
+    from app.api import auth, employees, jobs, nominations, routes, users
 
-    from app.main import app as fastapi_app
+    monkeypatch.setattr(employees, "fetch_employees", lambda *args, **kwargs: [])
+    monkeypatch.setattr(auth, "fetch_user_auth_by_email", lambda email: None)
+    monkeypatch.setattr(nominations, "fetch_employee_by_id", lambda employee_id: None)
+    monkeypatch.setattr(nominations, "fetch_nominations", lambda: [])
+
+    fastapi_app = FastAPI()
+    fastapi_app.include_router(routes.router, prefix="/api")
+    fastapi_app.include_router(auth.router, prefix="/api")
+    fastapi_app.include_router(employees.router, prefix="/api")
+    fastapi_app.include_router(jobs.router, prefix="/api")
+    fastapi_app.include_router(users.router, prefix="/api")
+    fastapi_app.include_router(nominations.router, prefix="/api")
+
     with TestClient(fastapi_app) as client:
         yield client
-
-    db_module.DB_PATH = original_path  # restore after module tests complete
 
 
 class TestNominationsEndpoint:
@@ -408,3 +415,139 @@ class TestJobsEndpoint:
             headers=_admin_headers(),
         )
         assert resp.status_code == 422
+
+
+class TestAuthRefreshAndLogout:
+    """Refresh and logout routes should remain operational after DB changes."""
+
+    def test_refresh_rotates_refresh_token(self, api_client, monkeypatch):
+        from app.api import auth
+
+        revoked_tokens = []
+        created_tokens = []
+
+        monkeypatch.setattr(auth, "fetch_refresh_token", lambda token: {
+            "token": token,
+            "user_id": "user-1",
+            "revoked_at": None,
+            "expires_at": datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1),
+        })
+        monkeypatch.setattr(auth, "fetch_user_auth_by_id", lambda user_id: {
+            "id": user_id,
+            "email": "admin@example.com",
+            "role": "admin",
+            "status": "active",
+            "is_active": 1,
+        })
+        monkeypatch.setattr(auth, "revoke_refresh_token", lambda token: revoked_tokens.append(token) or True)
+        monkeypatch.setattr(auth, "build_refresh_token", lambda: "rt_new_token")
+        monkeypatch.setattr(auth, "refresh_token_expiry", lambda: datetime.now(UTC).replace(tzinfo=None) + timedelta(days=7))
+        monkeypatch.setattr(auth, "create_access_token", lambda user_id, email, role: ("access-token", 1800))
+        monkeypatch.setattr(
+            auth,
+            "create_refresh_token",
+            lambda user_id, token, expires_at: created_tokens.append((user_id, token, expires_at)),
+        )
+
+        resp = api_client.post("/api/auth/refresh", json={"refresh_token": "rt_old_token"})
+
+        assert resp.status_code == 200
+        assert resp.json()["refresh_token"] == "rt_new_token"
+        assert revoked_tokens == ["rt_old_token"]
+        assert created_tokens and created_tokens[0][0] == "user-1"
+        assert created_tokens[0][1] == "rt_new_token"
+
+    def test_logout_revokes_token_idempotently(self, api_client, monkeypatch):
+        from app.api import auth
+
+        revoked_tokens = []
+        monkeypatch.setattr(auth, "revoke_refresh_token", lambda token: revoked_tokens.append(token) or False)
+
+        resp = api_client.post("/api/auth/logout", json={"refresh_token": "rt_old_token"})
+
+        assert resp.status_code == 200
+        assert resp.json() == {"detail": "Logged out"}
+        assert revoked_tokens == ["rt_old_token"]
+
+
+class TestUsersEndpoint:
+    """User mutation routes should remain wired after the database change."""
+
+    def test_update_user_returns_updated_row(self, api_client, monkeypatch):
+        from app.api import users
+
+        monkeypatch.setattr(users, "update_user", lambda user_id, payload: {
+            "id": user_id,
+            "employee_id": payload.get("employee_id"),
+            "email": payload.get("email", "user@example.com"),
+            "fullName": payload.get("fullName", "Updated User"),
+            "role": payload.get("role", "employee"),
+            "jobTitle": payload.get("jobTitle"),
+            "team": payload.get("team"),
+            "avatarUrl": payload.get("avatarUrl"),
+            "status": payload.get("status", "active"),
+            "is_active": payload.get("is_active", 1),
+            "last_login_at": None,
+        })
+
+        resp = api_client.patch(
+            "/api/users/user-1",
+            json={"fullName": "Updated User", "status": "active", "is_active": 1},
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["fullName"] == "Updated User"
+        assert resp.json()["status"] == "active"
+
+    def test_delete_user_returns_204_when_deleted(self, api_client, monkeypatch):
+        from app.api import users
+
+        monkeypatch.setattr(users, "delete_user", lambda user_id: True)
+
+        resp = api_client.delete("/api/users/user-1", headers=_admin_headers())
+
+        assert resp.status_code == 204
+        assert resp.text == ""
+
+    def test_delete_all_users_returns_count_message(self, api_client, monkeypatch):
+        from app.api import users
+
+        monkeypatch.setattr(users, "delete_all_users", lambda: 3)
+
+        resp = api_client.delete("/api/users", headers=_admin_headers())
+
+        assert resp.status_code == 200
+        assert resp.json() == {"detail": "Deleted 3 user(s)"}
+
+
+class TestSuccessfulNominationEndpoint:
+    """Nomination creation should still work with the current helper signature."""
+
+    def test_create_nomination_returns_created_row(self, api_client, monkeypatch):
+        from app.api import nominations
+
+        monkeypatch.setattr(nominations, "fetch_employee_by_id", lambda employee_id: {
+            "id": employee_id,
+            "full_name": "Jane Doe",
+        })
+        monkeypatch.setattr(nominations, "create_nomination", lambda payload: {
+            "id": 7,
+            **payload,
+            "created_at": "2026-04-15 12:00:00",
+        })
+
+        resp = api_client.post(
+            "/api/nominations",
+            json={
+                "nominatorName": "Alex Johnson",
+                "nominatorTeam": "Engineering",
+                "nomineeEmployeeId": "emp-1",
+                "nominationText": "A brilliant colleague who always helps others.",
+            },
+        )
+
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["nomineeName"] == "Jane Doe"
+        assert body["createdAt"] == "2026-04-15 12:00:00"

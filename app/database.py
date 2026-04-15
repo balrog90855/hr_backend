@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Iterator
 from uuid import uuid4
 
@@ -13,6 +13,32 @@ DB_PATH = f"mysql://{os.getenv('DB_USER', 'root')}@{os.getenv('DB_HOST', 'localh
 
 VALID_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SENSITIVE_TABLES = {"refresh_tokens"}
+USER_MUTABLE_COLUMNS = {
+    "employee_id",
+    "email",
+    "passwordHash",
+    "fullName",
+    "role",
+    "jobTitle",
+    "team",
+    "avatarUrl",
+    "status",
+    "is_active",
+    "last_login_at",
+}
+
+
+def _normalize_nomination_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    created_at = row.get("created_at")
+    if isinstance(created_at, datetime):
+        row["created_at"] = created_at.isoformat(sep=" ")
+    return row
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 # 🔹 DB CONNECTION
@@ -123,7 +149,8 @@ def fetch_user_by_id(user_id: str) -> dict[str, Any] | None:
 
 def create_user(data: dict[str, Any]) -> dict[str, Any]:
     user_id = data.get("id") or str(uuid4())
-    now = datetime.utcnow()
+    now = _utc_now_naive()
+    is_active = int(data.get("is_active", True))
 
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -145,7 +172,7 @@ def create_user(data: dict[str, Any]) -> dict[str, Any]:
                 data.get("team"),
                 data.get("avatarUrl"),
                 data.get("status", "active"),
-                data.get("is_active", True),
+                is_active,
                 now,
                 now,
             ))
@@ -206,6 +233,67 @@ def fetch_user_auth_by_email(email: str) -> dict[str, Any] | None:
             return cur.fetchone()
 
 
+def fetch_user_auth_by_id(user_id: str) -> dict[str, Any] | None:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM users WHERE id = %s LIMIT 1
+            """, (user_id,))
+            return cur.fetchone()
+
+
+def update_user(user_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    if not data:
+        return fetch_user_by_id(user_id)
+
+    unknown_columns = set(data).difference(USER_MUTABLE_COLUMNS)
+    if unknown_columns:
+        raise ValueError(f"Unsupported user fields: {', '.join(sorted(unknown_columns))}")
+
+    set_parts = []
+    params = []
+    for key, value in data.items():
+        if key == "is_active" and value is not None:
+            value = int(value)
+        set_parts.append(f"{key} = %s")
+        params.append(value)
+
+    set_parts.append("updated_at = %s")
+    params.append(_utc_now_naive())
+    params.append(user_id)
+
+    query = f"""
+        UPDATE users
+        SET {', '.join(set_parts)}
+        WHERE id = %s
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            if cur.rowcount == 0:
+                return None
+        conn.commit()
+    return fetch_user_by_id(user_id)
+
+
+def delete_user(user_id: str) -> bool:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            deleted = cur.rowcount > 0
+        conn.commit()
+        return deleted
+
+
+def delete_all_users() -> int:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM users")
+            count = cur.rowcount
+        conn.commit()
+        return count
+
+
 def create_refresh_token(user_id: str, token: str, expires_at: datetime) -> None:
     refresh_id = str(uuid4())
     with get_connection() as conn:
@@ -213,8 +301,30 @@ def create_refresh_token(user_id: str, token: str, expires_at: datetime) -> None
             cur.execute("""
                 INSERT INTO refresh_tokens (id, user_id, token, expires_at, created_at)
                 VALUES (%s, %s, %s, %s, %s)
-            """, (refresh_id, user_id, token, expires_at, datetime.utcnow()))
+            """, (refresh_id, user_id, token, expires_at, _utc_now_naive()))
         conn.commit()
+
+
+def fetch_refresh_token(token: str) -> dict[str, Any] | None:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM refresh_tokens WHERE token = %s LIMIT 1
+            """, (token,))
+            return cur.fetchone()
+
+
+def revoke_refresh_token(token: str) -> bool:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE refresh_tokens
+                SET revoked_at = %s
+                WHERE token = %s AND revoked_at IS NULL
+            """, (_utc_now_naive(), token))
+            revoked = cur.rowcount > 0
+        conn.commit()
+        return revoked
 
 
 def get_public_table_names() -> list[str]:
@@ -300,7 +410,7 @@ def fetch_employee_by_id(employee_id: str) -> dict[str, Any] | None:
 
 def create_employee(data: dict[str, Any]) -> dict[str, Any]:
     employee_id = data.get("id") or str(uuid4())
-    now = datetime.utcnow()
+    now = _utc_now_naive()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -355,7 +465,7 @@ def update_employee(employee_id: str, data: dict[str, Any]) -> dict[str, Any] | 
         SET {', '.join(set_parts)}, updated_at = %s
         WHERE id = %s
     """
-    params.insert(-1, datetime.utcnow())
+    params.insert(-1, _utc_now_naive())
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(query, params)
@@ -422,7 +532,7 @@ def bulk_create_jobs(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
 
 
 def create_job(data: dict[str, Any]) -> dict[str, Any]:
-    now = datetime.utcnow()
+    now = _utc_now_naive()
     is_vacant = data.get("is_vacant", 0)
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -458,10 +568,11 @@ def fetch_nominations(limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
                 ORDER BY created_at DESC
                 LIMIT %s OFFSET %s
             """, (limit, offset))
-            return cur.fetchall()
+            return [_normalize_nomination_row(row) for row in cur.fetchall()]
 
 
 def create_nomination(data: dict[str, Any]) -> dict[str, Any]:
+    created_at = _utc_now_naive()
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -476,8 +587,8 @@ def create_nomination(data: dict[str, Any]) -> dict[str, Any]:
                 data["nominee_employee_id"],
                 data["nominee_name"],
                 data["nomination_text"],
-                datetime.utcnow(),
+                created_at,
             ))
             nomination_id = cur.lastrowid
         conn.commit()
-        return {**data, "id": nomination_id, "created_at": datetime.utcnow()}
+        return _normalize_nomination_row({**data, "id": nomination_id, "created_at": created_at})
