@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.database import create_nomination, fetch_employee_by_id, fetch_nominations
 from app.schemas import NominationCreate, NominationOut
 from app.security import require_admin
+from app.database import create_nomination, fetch_employee_by_id, fetch_nominations
 
 router = APIRouter(tags=["nominations"])
 

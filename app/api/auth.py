@@ -5,13 +5,6 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 
-from app.database import (
-    create_refresh_token,
-    fetch_refresh_token,
-    fetch_user_auth_by_email,
-    fetch_user_auth_by_id,
-    revoke_refresh_token,
-)
 from app.schemas import AuthTokenResponse, LoginRequest, LogoutRequest, MessageResponse, RefreshTokenRequest
 from app.security import (
     build_refresh_token,
@@ -20,6 +13,9 @@ from app.security import (
     user_role_from_db,
     verify_password,
 )
+from app.database import create_refresh_token, fetch_user_auth_by_email
+
+BLOCKED_AUTH_STATUSES = {"inactive", "disabled", "locked", "suspended"}
 
 BLOCKED_AUTH_STATUSES = {"inactive", "disabled", "locked", "suspended"}
 

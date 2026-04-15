@@ -24,8 +24,8 @@ class GenericRowsResponse(BaseModel):
 class EmployeeOut(BaseModel):
     id: str
     job_number: str | None = None
-    full_name: str
     job_title: str | None = None
+    full_name: str
     team: str
     location: str
     avatar_url: str | None = None
@@ -91,7 +91,6 @@ class EmployeeUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     job_number: str | None = Field(default=None, alias="jobNumber")
-    job_title: str | None = Field(default=None, alias="jobTitle")
     full_name: str | None = Field(default=None, alias="fullName", min_length=1, max_length=200)
     team: str | None = Field(default=None, min_length=1, max_length=100)
     location: str | None = Field(default=None, min_length=1, max_length=100)

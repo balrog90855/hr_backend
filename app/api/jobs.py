@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.database import bulk_create_jobs, create_job, delete_all_jobs, fetch_jobs
 from app.schemas import BulkJobCreateResponse, JobCreate, JobOut, MessageResponse
 from app.security import require_admin
+from app.database import bulk_create_jobs, delete_all_jobs, fetch_jobs
 
 router = APIRouter(tags=["jobs"])
 

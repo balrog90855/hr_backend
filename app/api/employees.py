@@ -4,6 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
+
+from app.schemas import BulkEmployeeCreateResponse, EmployeeCreate, EmployeeOut, EmployeeUpdate, MessageResponse
+from app.security import require_admin, require_auth
 from app.database import (
     bulk_create_employees,
     create_employee,
@@ -13,8 +16,6 @@ from app.database import (
     fetch_employees,
     update_employee,
 )
-from app.schemas import BulkEmployeeCreateResponse, EmployeeCreate, EmployeeOut, EmployeeUpdate, MessageResponse
-from app.security import require_admin, require_auth
 
 router = APIRouter(tags=["employees"])
 

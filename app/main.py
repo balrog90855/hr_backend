@@ -1,36 +1,37 @@
 from __future__ import annotations
 
 import logging
-
+import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import auth, employees, jobs, nominations, routes, users
-from app.database import (
-    DB_PATH,
-    get_table_names,
-    initialize_database,
-    migrate_employee_appraisal_fields_if_needed,
-    migrate_team_constraints_if_needed,
-    migrate_users_employee_link_if_needed,
-)
+from app.database import initialize_database
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="HR App API",
     version="0.1.0",
-    description="Protected FastAPI layer over existing SQLite HR database",
+    description="FastAPI backend using MySQL",
 )
+
+
 
 
 @app.on_event("startup")
 def startup_initialize_database() -> None:
-    initialize_database()
-    migrate_team_constraints_if_needed()
-    migrate_users_employee_link_if_needed()
-    migrate_employee_appraisal_fields_if_needed()
-    logger.info("Database ready at %s with tables: %s", DB_PATH, ", ".join(get_table_names()))
+    for i in range(10):
+        try:
+            initialize_database()
+            logger.info("Database initialized")
+            return
+        except Exception as e:
+            logger.warning("DB not ready yet, retrying... (%s)", e)
+            time.sleep(3)
+
+    raise RuntimeError("Database failed to initialize after retries")
+
 
 app.add_middleware(
     CORSMiddleware,

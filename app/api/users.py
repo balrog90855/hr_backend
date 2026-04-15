@@ -4,16 +4,10 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from app.database import (
-    create_user,
-    delete_all_users,
-    delete_user,
-    fetch_user_by_id,
-    fetch_users_filtered,
-    update_user,
-)
+
 from app.schemas import MessageResponse, UserCreate, UserOut, UserUpdate
 from app.security import hash_password, require_admin, require_auth
+from app.database import create_user, fetch_user_by_id, fetch_users_filtered
 
 router = APIRouter(tags=["users"])
 

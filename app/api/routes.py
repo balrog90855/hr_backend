@@ -4,9 +4,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.database import DB_PATH, fetch_rows, get_public_table_names
 from app.schemas import GenericRowsResponse, HealthResponse, TableListResponse
 from app.security import require_auth
+from app.database import DB_PATH, fetch_rows, get_public_table_names
+
+router = APIRouter(tags=["general"])
 
 router = APIRouter(tags=["general"])
 
