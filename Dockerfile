@@ -8,8 +8,7 @@ WORKDIR /app
 COPY requirements.txt ./
 COPY wheelhouse/openshift-py310 /wheelhouse
 
-RUN pip install --no-cache-dir --no-index --find-links=/wheelhouse -r requirements.txt \
-    && rm -rf /wheelhouse
+RUN pip install -r requirements.txt
 
 COPY app ./app
 
