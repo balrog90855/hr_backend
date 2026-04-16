@@ -5,6 +5,7 @@ import logging
 import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import auth, employees, jobs, nominations, routes, users
@@ -13,16 +14,19 @@ from app.database import initialize_database
 logger = logging.getLogger(__name__)
 
 # Configure Swagger UI to use local assets (offline-friendly)
-swagger_ui_bundle_url = "/static/swagger-ui-bundle.js"
-swagger_ui_css_url = "/static/swagger-ui.css"
+swagger_js_url = "/static/swagger-ui-bundle.js"
+swagger_css_url = "/static/swagger-ui.css"
+swagger_favicon_url = "/static/favicon-32x32.png"
 
 app = FastAPI(
     title="HR App API",
     version="0.1.0",
     description="FastAPI backend using MySQL",
-    swagger_ui_bundle_url=swagger_ui_bundle_url,
-    swagger_ui_css_url=swagger_ui_css_url,
-    swagger_url="/api/docs",
+    docs_url=None,
+    redoc_url=None,
+    swagger_js_url=swagger_js_url,
+    swagger_css_url=swagger_css_url,
+    swagger_favicon_url=swagger_favicon_url,
     openapi_url="/api/openapi.json",
 )
 
@@ -33,6 +37,54 @@ try:
     logger.info("Swagger UI mounted from local assets at %s", swagger_ui_path)
 except Exception as e:
     logger.warning("Could not mount local Swagger UI assets: %s", e)
+
+
+
+@app.get("/docs", include_in_schema=False)
+def custom_swagger_ui_html() -> HTMLResponse:
+    html = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>HR App API Docs</title>
+      <link rel="stylesheet" href="/static/swagger-ui.css" />
+      <link rel="icon" type="image/png" href="/static/favicon-32x32.png" sizes="32x32" />
+      <link rel="icon" type="image/png" href="/static/favicon-16x16.png" sizes="16x16" />
+      <style>
+        html {
+          box-sizing: border-box;
+          overflow: -moz-scrollbars-vertical;
+          overflow-y: scroll;
+        }
+        *, *:before, *:after {
+          box-sizing: inherit;
+        }
+        body {
+          margin: 0;
+          background: #fafafa;
+        }
+      </style>
+    </head>
+    <body>
+      <div id="swagger-ui"></div>
+      <script src="/static/swagger-ui-bundle.js"></script>
+      <script src="/static/swagger-ui-standalone-preset.js"></script>
+      <script>
+        window.onload = function() {
+          SwaggerUIBundle({
+            url: "/api/openapi.json",
+            dom_id: "#swagger-ui",
+            presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+            layout: "BaseLayout",
+          });
+        };
+      </script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(html)
 
 
 
