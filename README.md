@@ -41,13 +41,52 @@ python -m app.bootstrap_admin
 
 The command is idempotent for an already-active admin with the same email. If the email already exists for a non-admin user, it fails so that privilege changes stay explicit.
 
-## Docker
+## Container And OpenShift
 
-Build and run with Docker Compose:
+The image is built from [hr_backend/Dockerfile](c:/Users/Joe_E/Documents/coding/HR_APP/hr_backend/Dockerfile). Application settings such as database credentials, JWT secrets, static admin tokens, and bootstrap admin values are not baked into the image. The backend reads them at runtime with `os.getenv(...)`, so they must be supplied by the OpenShift deployment.
+
+In practice that means:
+
+- BuildConfig or image build settings affect the image build only.
+- Deployment, DeploymentConfig, Secret, and ConfigMap environment variables affect the running app.
+- [hr_backend/.env.example](c:/Users/Joe_E/Documents/coding/HR_APP/hr_backend/.env.example) is only a template for the variable names. It is not loaded automatically inside the container.
+
+Typical OpenShift pattern:
+
+- Put secrets such as `DB_PASSWORD`, `HR_APP_JWT_SECRET`, and `HR_APP_ADMIN_TOKENS` in a Secret.
+- Put non-secret values such as `DB_HOST`, `DB_PORT`, and `DB_NAME` in a ConfigMap or directly on the Deployment.
+- Attach them to the running Deployment as environment variables.
+
+Example manifests are provided under [hr_backend/openshift](c:/Users/Joe_E/Documents/coding/HR_APP/hr_backend/openshift):
+
+- [hr_backend/openshift/configmap.yaml](c:/Users/Joe_E/Documents/coding/HR_APP/hr_backend/openshift/configmap.yaml)
+- [hr_backend/openshift/secret.example.yaml](c:/Users/Joe_E/Documents/coding/HR_APP/hr_backend/openshift/secret.example.yaml)
+- [hr_backend/openshift/deployment.yaml](c:/Users/Joe_E/Documents/coding/HR_APP/hr_backend/openshift/deployment.yaml)
+- [hr_backend/openshift/service.yaml](c:/Users/Joe_E/Documents/coding/HR_APP/hr_backend/openshift/service.yaml)
+- [hr_backend/openshift/bootstrap-admin-job.yaml](c:/Users/Joe_E/Documents/coding/HR_APP/hr_backend/openshift/bootstrap-admin-job.yaml)
+
+Apply them after replacing the placeholder image reference and secret values:
 
 ```powershell
-docker compose up --build
+oc apply -f openshift/configmap.yaml
+oc apply -f openshift/secret.example.yaml
+oc apply -f openshift/deployment.yaml
+oc apply -f openshift/service.yaml
 ```
+
+To bootstrap the first admin in OpenShift, run the image as a one-off command or Job with the bootstrap env vars set and execute:
+
+```powershell
+python -m app.bootstrap_admin
+```
+
+If you use the provided Job manifest, apply it once after the API image is available:
+
+```powershell
+oc apply -f openshift/bootstrap-admin-job.yaml
+```
+
+Delete the Job after it succeeds so it is not re-run accidentally.
 
 The Docker image installs Python packages from `wheelhouse/openshift-py310/` and does not contact PyPI during the build.
 
@@ -56,9 +95,8 @@ The API will be available at `http://localhost:8000`.
 Container defaults:
 
 - Python 3.10 base image
-- MySQL 8.0 database stored in the `db_data` Docker volume
 - API exposed on port `8000`
-- Configured with environment variables from `docker-compose.yml`
+- Configured with environment variables supplied by the container platform at runtime
 
 ## Offline Deployment Notes
 
@@ -78,7 +116,7 @@ pip install --no-index --find-links wheelhouse/openshift-py310 -r requirements.t
 
 This wheelhouse targets Linux `x86_64` with Python `3.10` and `manylinux2014`-compatible wheels, which aligns with common Red Hat OpenShift deployments.
 
-To override secrets and token settings, create a local `.env` file based on `.env.example` before starting the stack.
+For local development, you can still export variables from a local `.env` file or your shell, but OpenShift will not load `.env` automatically unless you explicitly mount or transform it into runtime environment variables.
 
 ## Project Structure
 

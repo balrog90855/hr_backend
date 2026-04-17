@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hr-app-bootstrap-admin
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bootstrap-admin
+          image: image-registry.openshift-image-registry.svc:5000/your-project/hr-app-api:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -m
+            - app.bootstrap_admin
+          envFrom:
+            - configMapRef:
+                name: hr-app-api-config
+            - secretRef:
+                name: hr-app-api-secrets
