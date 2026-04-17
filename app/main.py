@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from importlib.resources import files
 import logging
+import os
 import time
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -12,6 +14,22 @@ from app.api import auth, employees, jobs, nominations, routes, users
 from app.database import initialize_database
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_swagger_ui_path() -> Path:
+  vendor_path = Path(str(files("swagger_ui_bundle").joinpath("vendor")))
+  required_files = {"swagger-ui.css", "swagger-ui-bundle.js"}
+
+  if not vendor_path.exists():
+    raise FileNotFoundError(f"Swagger UI vendor directory not found: {vendor_path}")
+
+  for root, _, filenames in os.walk(vendor_path):
+    if required_files.issubset(set(filenames)):
+      return Path(root)
+
+  raise FileNotFoundError(
+    f"Could not locate Swagger UI assets under vendor directory: {vendor_path}"
+  )
 
 # Configure Swagger UI to use local assets (offline-friendly)
 swagger_js_url = "/static/swagger-ui-bundle.js"
@@ -32,7 +50,7 @@ app = FastAPI(
 
 # Mount Swagger UI static files from swagger-ui-py package
 try:
-    swagger_ui_path = files("swagger_ui").joinpath("static")
+    swagger_ui_path = resolve_swagger_ui_path()
     app.mount("/static", StaticFiles(directory=str(swagger_ui_path)), name="static")
     logger.info("Swagger UI mounted from local assets at %s", swagger_ui_path)
 except Exception as e:
