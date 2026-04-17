@@ -551,3 +551,168 @@ class TestSuccessfulNominationEndpoint:
         body = resp.json()
         assert body["nomineeName"] == "Jane Doe"
         assert body["createdAt"] == "2026-04-15 12:00:00"
+
+
+class _FakeCursor:
+    def __init__(self, rowcount: int = 1):
+        self.executed: list[tuple[str, tuple | list | None]] = []
+        self.rowcount = rowcount
+
+    def execute(self, query, params=None):
+        self.executed.append((query, params))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeConnection:
+    def __init__(self, rowcount: int = 1):
+        self.cursor_obj = _FakeCursor(rowcount=rowcount)
+        self.commits = 0
+
+    def cursor(self):
+        return self.cursor_obj
+
+    def commit(self):
+        self.commits += 1
+
+    def close(self):
+        return None
+
+
+class _FakeConnectionContext:
+    def __init__(self, connection: _FakeConnection):
+        self.connection = connection
+
+    def __enter__(self):
+        return self.connection
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class TestVacancySynchronizationHelpers:
+    def test_create_employee_syncs_assigned_job(self, monkeypatch):
+        from app import database
+
+        connection = _FakeConnection()
+        sync_calls = []
+
+        monkeypatch.setattr(database, "get_connection", lambda: _FakeConnectionContext(connection))
+        monkeypatch.setattr(
+            database,
+            "sync_job_vacancy_states",
+            lambda job_numbers=None: sync_calls.append(list(job_numbers) if job_numbers is not None else None),
+        )
+        monkeypatch.setattr(
+            database,
+            "fetch_employee_by_id",
+            lambda employee_id: {"id": employee_id, "job_number": "JOB-1", "full_name": "Jane Doe"},
+        )
+
+        created = database.create_employee({
+            "job_number": "JOB-1",
+            "full_name": "Jane Doe",
+            "team": "engineering",
+            "location": "north",
+            "status": "active",
+        })
+
+        assert created["job_number"] == "JOB-1"
+        assert connection.commits == 1
+        assert sync_calls == [["JOB-1"]]
+
+    def test_bulk_create_employees_batches_vacancy_sync(self, monkeypatch):
+        from app import database
+
+        sync_calls = []
+        helper_calls = []
+
+        def fake_create(item, sync_vacancy):
+            helper_calls.append(sync_vacancy)
+            if item["full_name"] == "Broken Employee":
+                raise ValueError("boom")
+            return {"id": item["full_name"], "job_number": item.get("job_number")}
+
+        monkeypatch.setattr(database, "_create_employee_record", fake_create)
+        monkeypatch.setattr(
+            database,
+            "sync_job_vacancy_states",
+            lambda job_numbers=None: sync_calls.append(list(job_numbers) if job_numbers is not None else None),
+        )
+
+        created, errors = database.bulk_create_employees([
+            {"job_number": "JOB-1", "full_name": "Jane Doe"},
+            {"job_number": "JOB-2", "full_name": "Broken Employee"},
+        ])
+
+        assert helper_calls == [False, False]
+        assert created == [{"id": "Jane Doe", "job_number": "JOB-1"}]
+        assert len(errors) == 1
+        assert sync_calls == [["JOB-1"]]
+
+    def test_update_employee_syncs_previous_and_next_jobs(self, monkeypatch):
+        from app import database
+
+        connection = _FakeConnection(rowcount=1)
+        sync_calls = []
+        fetched_rows = iter([
+            {"id": "emp-1", "job_number": "JOB-OLD", "full_name": "Jane Doe"},
+            {"id": "emp-1", "job_number": "JOB-NEW", "full_name": "Jane Doe"},
+        ])
+
+        monkeypatch.setattr(database, "get_connection", lambda: _FakeConnectionContext(connection))
+        monkeypatch.setattr(database, "fetch_employee_by_id", lambda employee_id: next(fetched_rows))
+        monkeypatch.setattr(
+            database,
+            "sync_job_vacancy_states",
+            lambda job_numbers=None: sync_calls.append(list(job_numbers) if job_numbers is not None else None),
+        )
+
+        updated = database.update_employee("emp-1", {"job_number": "JOB-NEW", "full_name": "Jane Doe"})
+
+        assert updated["job_number"] == "JOB-NEW"
+        assert connection.commits == 1
+        assert sync_calls == [["JOB-OLD", "JOB-NEW"]]
+
+    def test_delete_all_employees_syncs_all_jobs(self, monkeypatch):
+        from app import database
+
+        connection = _FakeConnection(rowcount=4)
+        sync_calls = []
+
+        monkeypatch.setattr(database, "get_connection", lambda: _FakeConnectionContext(connection))
+        monkeypatch.setattr(database, "sync_job_vacancy_states", lambda job_numbers=None: sync_calls.append(job_numbers))
+
+        deleted = database.delete_all_employees()
+
+        assert deleted == 4
+        assert connection.commits == 1
+        assert sync_calls == [None]
+
+    def test_create_job_defaults_to_vacant_then_reloads_synced_row(self, monkeypatch):
+        from app import database
+
+        connection = _FakeConnection()
+        sync_calls = []
+
+        monkeypatch.setattr(database, "get_connection", lambda: _FakeConnectionContext(connection))
+        monkeypatch.setattr(
+            database,
+            "sync_job_vacancy_states",
+            lambda job_numbers=None: sync_calls.append(list(job_numbers) if job_numbers is not None else None),
+        )
+        monkeypatch.setattr(
+            database,
+            "fetch_job_by_number",
+            lambda job_number: {"job_number": job_number, "job_title": "Engineer", "is_vacant": 1},
+        )
+
+        created = database.create_job({"job_number": "JOB-1", "job_title": "Engineer"})
+
+        assert created == {"job_number": "JOB-1", "job_title": "Engineer", "is_vacant": 1}
+        assert connection.cursor_obj.executed[0][1][2] == 1
+        assert sync_calls == [["JOB-1"]]

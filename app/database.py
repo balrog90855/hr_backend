@@ -4,7 +4,7 @@ import os
 import re
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 from uuid import uuid4
 
 import pymysql
@@ -39,6 +39,53 @@ def _normalize_nomination_row(row: dict[str, Any] | None) -> dict[str, Any] | No
 
 def _utc_now_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _normalize_job_numbers(job_numbers: Iterable[str | None]) -> list[str]:
+    unique_job_numbers: list[str] = []
+    seen: set[str] = set()
+
+    for job_number in job_numbers:
+        if not job_number or job_number in seen:
+            continue
+        seen.add(job_number)
+        unique_job_numbers.append(job_number)
+
+    return unique_job_numbers
+
+
+def sync_job_vacancy_states(job_numbers: Iterable[str | None] | None = None) -> None:
+    normalized_job_numbers = None if job_numbers is None else _normalize_job_numbers(job_numbers)
+    if normalized_job_numbers == []:
+        return
+
+    where_clause = ""
+    params: list[Any] = [_utc_now_naive()]
+
+    if normalized_job_numbers is not None:
+        placeholders = ", ".join(["%s"] * len(normalized_job_numbers))
+        where_clause = f"WHERE j.job_number IN ({placeholders})"
+        params.extend(normalized_job_numbers)
+
+    query = f"""
+        UPDATE jobs j
+        SET
+            is_vacant = CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM employees e
+                    WHERE e.job_number = j.job_number
+                ) THEN 0
+                ELSE 1
+            END,
+            updated_at = %s
+        {where_clause}
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+        conn.commit()
 
 
 # 🔹 DB CONNECTION
@@ -408,9 +455,11 @@ def fetch_employee_by_id(employee_id: str) -> dict[str, Any] | None:
             return row
 
 
-def create_employee(data: dict[str, Any]) -> dict[str, Any]:
+def _create_employee_record(data: dict[str, Any], sync_vacancy: bool) -> dict[str, Any]:
     employee_id = data.get("id") or str(uuid4())
     now = _utc_now_naive()
+    job_number = data.get("job_number")
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -422,7 +471,7 @@ def create_employee(data: dict[str, Any]) -> dict[str, Any]:
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 employee_id,
-                data.get("job_number"),
+                job_number,
                 data["full_name"],
                 data["team"],
                 data["location"],
@@ -435,23 +484,42 @@ def create_employee(data: dict[str, Any]) -> dict[str, Any]:
                 now,
             ))
         conn.commit()
-        return fetch_employee_by_id(employee_id)
+
+    if sync_vacancy:
+        sync_job_vacancy_states([job_number])
+
+    row = fetch_employee_by_id(employee_id)
+    if row is None:
+        raise RuntimeError(f"Failed to load employee after creation: {employee_id}")
+    return row
+
+
+def create_employee(data: dict[str, Any]) -> dict[str, Any]:
+    return _create_employee_record(data, sync_vacancy=True)
 
 
 def bulk_create_employees(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     created = []
     errors = []
+    affected_job_numbers: list[str | None] = []
     for item in items:
         try:
-            created.append(create_employee(item))
+            created.append(_create_employee_record(item, sync_vacancy=False))
+            affected_job_numbers.append(item.get("job_number"))
         except Exception as e:
             errors.append({"detail": f"Failed to create employee {item.get('full_name', 'unknown')}: {e}"})
+
+    sync_job_vacancy_states(affected_job_numbers)
     return created, errors
 
 
 def update_employee(employee_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    current_employee = fetch_employee_by_id(employee_id)
+    if current_employee is None:
+        return None
     if not data:
-        return fetch_employee_by_id(employee_id)
+        return current_employee
+
     set_parts = []
     params = []
     for key, value in data.items():
@@ -459,6 +527,12 @@ def update_employee(employee_id: str, data: dict[str, Any]) -> dict[str, Any] | 
             continue  # Skip job_title
         set_parts.append(f"{key} = %s")
         params.append(value)
+
+    if not set_parts:
+        return current_employee
+
+    previous_job_number = current_employee.get("job_number")
+    next_job_number = data.get("job_number", previous_job_number)
     params.append(employee_id)
     query = f"""
         UPDATE employees
@@ -472,16 +546,26 @@ def update_employee(employee_id: str, data: dict[str, Any]) -> dict[str, Any] | 
             if cur.rowcount == 0:
                 return None
         conn.commit()
-        return fetch_employee_by_id(employee_id)
+
+    sync_job_vacancy_states([previous_job_number, next_job_number])
+    return fetch_employee_by_id(employee_id)
 
 
 def delete_employee(employee_id: str) -> bool:
+    current_employee = fetch_employee_by_id(employee_id)
+    if current_employee is None:
+        return False
+
+    job_number = current_employee.get("job_number")
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM employees WHERE id = %s", (employee_id,))
             deleted = cur.rowcount > 0
         conn.commit()
-        return deleted
+
+    if deleted:
+        sync_job_vacancy_states([job_number])
+    return deleted
 
 
 def delete_all_employees() -> int:
@@ -490,10 +574,21 @@ def delete_all_employees() -> int:
             cur.execute("DELETE FROM employees")
             count = cur.rowcount
         conn.commit()
-        return count
+
+    sync_job_vacancy_states()
+    return count
 
 
 # 🔹 JOB HELPERS
+def fetch_job_by_number(job_number: str) -> dict[str, Any] | None:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT * FROM jobs WHERE job_number = %s LIMIT 1
+            """, (job_number,))
+            return cur.fetchone()
+
+
 def fetch_jobs(limit: int = 50, offset: int = 0, vacant_only: bool = False, search: str | None = None) -> list[dict[str, Any]]:
     conditions = []
     params = []
@@ -533,7 +628,6 @@ def bulk_create_jobs(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
 
 def create_job(data: dict[str, Any]) -> dict[str, Any]:
     now = _utc_now_naive()
-    is_vacant = data.get("is_vacant", 0)
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -542,12 +636,17 @@ def create_job(data: dict[str, Any]) -> dict[str, Any]:
             """, (
                 data["job_number"],
                 data["job_title"],
-                is_vacant,
+                1,
                 now,
                 now,
             ))
         conn.commit()
-        return {"job_number": data["job_number"], "job_title": data["job_title"], "is_vacant": is_vacant}
+
+    sync_job_vacancy_states([data["job_number"]])
+    row = fetch_job_by_number(data["job_number"])
+    if row is None:
+        return {"job_number": data["job_number"], "job_title": data["job_title"], "is_vacant": 1}
+    return row
 
 
 def delete_all_jobs() -> int:
