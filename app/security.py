@@ -32,9 +32,6 @@ def _token_config() -> tuple[set[str], set[str]]:
     if legacy_token:
         admin_tokens.add(legacy_token)
 
-    if not admin_tokens and not readonly_tokens:
-        admin_tokens.add("dev-token")
-
     return admin_tokens, readonly_tokens
 
 

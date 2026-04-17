@@ -21,6 +21,26 @@ Supported runtime baseline:
 uvicorn app.main:app --reload
 ```
 
+## Bootstrap The First Admin
+
+`POST /api/users` is admin-only. Create the first admin user with the bootstrap command instead of leaving public signup open.
+
+Set these environment variables before running the command:
+
+- `HR_APP_BOOTSTRAP_ADMIN_EMAIL`
+- `HR_APP_BOOTSTRAP_ADMIN_PASSWORD`
+- `HR_APP_BOOTSTRAP_ADMIN_FULL_NAME`
+- `HR_APP_BOOTSTRAP_ADMIN_TEAM` (optional)
+- `HR_APP_BOOTSTRAP_ADMIN_JOB_TITLE` (optional)
+
+Run:
+
+```powershell
+python -m app.bootstrap_admin
+```
+
+The command is idempotent for an already-active admin with the same email. If the email already exists for a non-admin user, it fails so that privilege changes stay explicit.
+
 ## Docker
 
 Build and run with Docker Compose:
@@ -195,7 +215,8 @@ Token configuration:
 - `HR_APP_ACCESS_TOKEN_MINUTES`: access token lifetime in minutes (default `30`)
 - `HR_APP_REFRESH_TOKEN_DAYS`: refresh token lifetime in days (default `7`)
 
-If no token env vars are set, default admin token is `dev-token`.
+
+There is no default admin token fallback. For first-time setup, use `python -m app.bootstrap_admin` to create the initial admin user, then log in through the normal auth flow.
 
 ## Database Configuration
 
@@ -214,3 +235,8 @@ Database environment variables:
 - `HR_APP_JWT_SECRET`
 - `HR_APP_ACCESS_TOKEN_MINUTES`
 - `HR_APP_REFRESH_TOKEN_DAYS`
+- `HR_APP_BOOTSTRAP_ADMIN_EMAIL`
+- `HR_APP_BOOTSTRAP_ADMIN_PASSWORD`
+- `HR_APP_BOOTSTRAP_ADMIN_FULL_NAME`
+- `HR_APP_BOOTSTRAP_ADMIN_TEAM`
+- `HR_APP_BOOTSTRAP_ADMIN_JOB_TITLE`

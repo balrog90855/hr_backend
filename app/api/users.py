@@ -20,7 +20,10 @@ router = APIRouter(tags=["users"])
 
 
 @router.post("/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def create_user_route(payload: UserCreate) -> UserOut:
+def create_user_route(
+    payload: UserCreate,
+    _authorized: None = Depends(require_admin),
+) -> UserOut:
     db_payload = payload.model_dump(by_alias=True)
     db_payload["passwordHash"] = hash_password(db_payload.pop("password"))
     try:

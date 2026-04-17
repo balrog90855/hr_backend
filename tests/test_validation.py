@@ -14,15 +14,16 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pydantic import ValidationError
 
+TEST_ADMIN_TOKEN = "test-admin-token"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _admin_headers() -> dict[str, str]:
-    """Return an Authorization header accepted by require_admin.
-    When no env vars are set the security module whitelists 'dev-token'."""
-    return {"Authorization": "Bearer dev-token"}
+    """Return an Authorization header accepted by require_admin."""
+    return {"Authorization": f"Bearer {TEST_ADMIN_TOKEN}"}
 
 
 # ===========================================================================
@@ -281,6 +282,10 @@ def api_client(monkeypatch):
 
     from app.api import auth, employees, jobs, nominations, routes, users
 
+    monkeypatch.setenv("HR_APP_ADMIN_TOKENS", TEST_ADMIN_TOKEN)
+    monkeypatch.delenv("HR_APP_API_TOKEN", raising=False)
+    monkeypatch.delenv("HR_APP_READONLY_TOKENS", raising=False)
+
     monkeypatch.setattr(employees, "fetch_employees", lambda *args, **kwargs: [])
     monkeypatch.setattr(auth, "fetch_user_auth_by_email", lambda email: None)
     monkeypatch.setattr(nominations, "fetch_employee_by_id", lambda employee_id: None)
@@ -472,6 +477,50 @@ class TestAuthRefreshAndLogout:
 
 class TestUsersEndpoint:
     """User mutation routes should remain wired after the database change."""
+
+    def test_create_user_requires_admin(self, api_client):
+        resp = api_client.post(
+            "/api/users",
+            json={
+                "email": "new.user@example.com",
+                "password": "securepass123",
+                "fullName": "New User",
+            },
+        )
+
+        assert resp.status_code == 401
+
+    def test_create_user_with_admin_token_returns_created_row(self, api_client, monkeypatch):
+        from app.api import users
+
+        monkeypatch.setattr(users, "create_user", lambda payload: {
+            "id": "user-1",
+            "employee_id": payload.get("employee_id"),
+            "email": payload["email"],
+            "fullName": payload["fullName"],
+            "role": payload.get("role", "employee"),
+            "jobTitle": payload.get("jobTitle"),
+            "team": payload.get("team"),
+            "avatarUrl": payload.get("avatarUrl"),
+            "status": payload.get("status", "active"),
+            "is_active": int(payload.get("is_active", 1)),
+            "last_login_at": None,
+        })
+
+        resp = api_client.post(
+            "/api/users",
+            json={
+                "email": "new.user@example.com",
+                "password": "securepass123",
+                "fullName": "New User",
+                "role": "admin",
+            },
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["email"] == "new.user@example.com"
+        assert resp.json()["role"] == "admin"
 
     def test_update_user_returns_updated_row(self, api_client, monkeypatch):
         from app.api import users
