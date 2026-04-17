@@ -5,9 +5,9 @@ import logging
 import os
 import time
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 
 from app.api import auth, employees, jobs, nominations, routes, users
@@ -42,9 +42,6 @@ app = FastAPI(
     description="FastAPI backend using MySQL",
     docs_url=None,
     redoc_url=None,
-    swagger_js_url=swagger_js_url,
-    swagger_css_url=swagger_css_url,
-    swagger_favicon_url=swagger_favicon_url,
     openapi_url="/api/openapi.json",
 )
 
@@ -59,50 +56,16 @@ except Exception as e:
 
 
 @app.get("/docs", include_in_schema=False)
-def custom_swagger_ui_html() -> HTMLResponse:
-    html = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>HR App API Docs</title>
-      <link rel="stylesheet" href="/static/swagger-ui.css" />
-      <link rel="icon" type="image/png" href="/static/favicon-32x32.png" sizes="32x32" />
-      <link rel="icon" type="image/png" href="/static/favicon-16x16.png" sizes="16x16" />
-      <style>
-        html {
-          box-sizing: border-box;
-          overflow: -moz-scrollbars-vertical;
-          overflow-y: scroll;
-        }
-        *, *:before, *:after {
-          box-sizing: inherit;
-        }
-        body {
-          margin: 0;
-          background: #fafafa;
-        }
-      </style>
-    </head>
-    <body>
-      <div id="swagger-ui"></div>
-      <script src="/static/swagger-ui-bundle.js"></script>
-      <script src="/static/swagger-ui-standalone-preset.js"></script>
-      <script>
-        window.onload = function() {
-          SwaggerUIBundle({
-            url: "/api/openapi.json",
-            dom_id: "#swagger-ui",
-            presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-            layout: "BaseLayout",
-          });
-        };
-      </script>
-    </body>
-    </html>
-    """
-    return HTMLResponse(html)
+def custom_swagger_ui_html(request: Request):
+    root_path = request.scope.get("root_path", "")
+    openapi_url = f"{root_path}{app.openapi_url}"
+    return get_swagger_ui_html(
+        openapi_url=openapi_url,
+        title="HR App API Docs",
+        swagger_js_url=swagger_js_url,
+        swagger_css_url=swagger_css_url,
+        swagger_favicon_url=swagger_favicon_url,
+    )
 
 
 
