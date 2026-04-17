@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 
 from app.api import auth, employees, jobs, nominations, routes, users
@@ -31,6 +32,22 @@ def resolve_swagger_ui_path() -> Path:
     f"Could not locate Swagger UI assets under vendor directory: {vendor_path}"
   )
 
+
+def custom_openapi() -> dict:
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    openapi_schema["openapi"] = "3.0.3"
+    openapi_schema.pop("jsonSchemaDialect", None)
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
 # Configure Swagger UI to use local assets (offline-friendly)
 swagger_js_url = "/static/swagger-ui-bundle.js"
 swagger_css_url = "/static/swagger-ui.css"
@@ -44,6 +61,8 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/api/openapi.json",
 )
+
+app.openapi = custom_openapi
 
 # Mount Swagger UI static files from swagger-ui-py package
 try:
