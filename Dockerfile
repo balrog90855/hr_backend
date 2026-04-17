@@ -6,9 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY requirements.txt ./
-COPY wheelhouse/openshift-py310 /wheelhouse
 
-RUN pip install -r requirements.txt
+
+RUN pip install -r requirements.txt 
 
 COPY app ./app
 
