@@ -66,6 +66,21 @@ class BulkJobCreateResponse(BaseModel):
     errors: list[dict[str, Any]]
 
 
+class JobVacancySyncRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    job_numbers: list[str] | None = Field(default=None, alias="jobNumbers")
+
+    @field_validator("job_numbers", mode="before")
+    @classmethod
+    def _normalize_job_numbers(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if not isinstance(v, list):
+            return v
+        return [_normalize_job_number(item, blank_to_none=False) for item in v]
+
+
 class UserOut(BaseModel):
     id: str
     employee_id: str | None = None

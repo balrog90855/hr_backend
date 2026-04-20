@@ -279,6 +279,22 @@ class TestJobCreateSchema:
             JobCreate(job_number="J001", job_title="T" * 201)
 
 
+class TestJobVacancySyncRequestSchema:
+    def test_job_numbers_are_trimmed(self):
+        from app.schemas import JobVacancySyncRequest
+
+        payload = JobVacancySyncRequest(jobNumbers=["  JOB-1  ", "JOB-2"])
+
+        assert payload.job_numbers == ["JOB-1", "JOB-2"]
+
+    def test_empty_list_is_accepted(self):
+        from app.schemas import JobVacancySyncRequest
+
+        payload = JobVacancySyncRequest(jobNumbers=[])
+
+        assert payload.job_numbers == []
+
+
 class TestLoginRequestSchema:
     """LoginRequest must reject empty username or password."""
 
@@ -448,6 +464,39 @@ class TestJobsEndpoint:
             headers=_admin_headers(),
         )
         assert resp.status_code == 422
+
+    def test_sync_vacancy_requires_admin(self, api_client):
+        resp = api_client.post("/api/jobs/sync-vacancy")
+
+        assert resp.status_code == 401
+
+    def test_sync_vacancy_without_job_numbers_syncs_all_jobs(self, api_client, monkeypatch):
+        from app.api import jobs
+
+        sync_calls = []
+        monkeypatch.setattr(jobs, "sync_job_vacancy_states", lambda job_numbers=None: sync_calls.append(job_numbers))
+
+        resp = api_client.post("/api/jobs/sync-vacancy", headers=_admin_headers())
+
+        assert resp.status_code == 200
+        assert resp.json() == {"detail": "Synchronized vacancy flags for all jobs"}
+        assert sync_calls == [None]
+
+    def test_sync_vacancy_with_job_numbers_scopes_sync(self, api_client, monkeypatch):
+        from app.api import jobs
+
+        sync_calls = []
+        monkeypatch.setattr(jobs, "sync_job_vacancy_states", lambda job_numbers=None: sync_calls.append(job_numbers))
+
+        resp = api_client.post(
+            "/api/jobs/sync-vacancy",
+            json={"jobNumbers": ["  JOB-1  ", "JOB-2"]},
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"detail": "Synchronized vacancy flags for 2 job(s)"}
+        assert sync_calls == [["JOB-1", "JOB-2"]]
 
 
 class TestAuthRefreshAndLogout:

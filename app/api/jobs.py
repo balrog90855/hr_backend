@@ -4,9 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.schemas import BulkJobCreateResponse, JobCreate, JobOut, MessageResponse
+from app.schemas import BulkJobCreateResponse, JobCreate, JobOut, JobVacancySyncRequest, MessageResponse
 from app.security import require_admin
-from app.database import bulk_create_jobs, delete_all_jobs, fetch_jobs
+from app.database import bulk_create_jobs, delete_all_jobs, fetch_jobs, sync_job_vacancy_states
 
 router = APIRouter(tags=["jobs"])
 
@@ -38,6 +38,20 @@ def bulk_create_jobs_route(
         created=[JobOut.model_validate(r) for r in created_rows],
         errors=errors,
     )
+
+
+@router.post("/jobs/sync-vacancy", response_model=MessageResponse)
+def sync_job_vacancy_route(
+    payload: JobVacancySyncRequest | None = None,
+    _authorized: None = Depends(require_admin),
+) -> MessageResponse:
+    job_numbers = None if payload is None or not payload.job_numbers else payload.job_numbers
+    sync_job_vacancy_states(job_numbers)
+
+    if job_numbers is None:
+        return MessageResponse(detail="Synchronized vacancy flags for all jobs")
+
+    return MessageResponse(detail=f"Synchronized vacancy flags for {len(job_numbers)} job(s)")
 
 
 @router.delete("/jobs", response_model=MessageResponse)
