@@ -6,6 +6,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+def _normalize_job_number(value: Any, *, blank_to_none: bool) -> Any:
+    if not isinstance(value, str):
+        return value
+
+    normalized = value.strip()
+    if normalized == "" and blank_to_none:
+        return None
+    return normalized
+
+
 class HealthResponse(BaseModel):
     status: str
     database: str
@@ -44,6 +54,11 @@ class JobOut(BaseModel):
 class JobCreate(BaseModel):
     job_number: str = Field(min_length=1, max_length=50)
     job_title: str = Field(min_length=1, max_length=200)
+
+    @field_validator("job_number", mode="before")
+    @classmethod
+    def _normalize_job_number(cls, v: Any) -> Any:
+        return _normalize_job_number(v, blank_to_none=False)
 
 
 class BulkJobCreateResponse(BaseModel):
@@ -86,6 +101,11 @@ class EmployeeCreate(BaseModel):
             return v.strip()
         return v
 
+    @field_validator("job_number", mode="before")
+    @classmethod
+    def _normalize_job_number(cls, v: Any) -> Any:
+        return _normalize_job_number(v, blank_to_none=True)
+
 
 class EmployeeUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -99,6 +119,11 @@ class EmployeeUpdate(BaseModel):
     service: str | None = None
     grade: str | None = None
     appraisal_due_date: str | None = Field(default=None, alias="appraisalDueDate")
+
+    @field_validator("job_number", mode="before")
+    @classmethod
+    def _normalize_job_number(cls, v: Any) -> Any:
+        return _normalize_job_number(v, blank_to_none=True)
 
 
 class UserCreate(BaseModel):

@@ -120,6 +120,14 @@ class TestEmployeeCreateSchema:
         assert emp.full_name == "Jane Doe"
         assert emp.status == "active"
 
+    def test_job_number_is_trimmed(self):
+        emp = self._make(jobNumber="  JOB-001  ")
+        assert emp.job_number == "JOB-001"
+
+    def test_whitespace_only_job_number_becomes_none(self):
+        emp = self._make(jobNumber="   ")
+        assert emp.job_number is None
+
     def test_whitespace_full_name_is_stripped_then_rejected(self):
         with pytest.raises(ValidationError):
             self._make(fullName="   ")
@@ -163,6 +171,16 @@ class TestEmployeeUpdateSchema:
         upd = EmployeeUpdate(fullName="Updated Name", status="away")
         assert upd.full_name == "Updated Name"
         assert upd.status == "away"
+
+    def test_job_number_is_trimmed(self):
+        from app.schemas import EmployeeUpdate
+        upd = EmployeeUpdate(jobNumber="  JOB-002  ")
+        assert upd.job_number == "JOB-002"
+
+    def test_whitespace_only_job_number_becomes_none(self):
+        from app.schemas import EmployeeUpdate
+        upd = EmployeeUpdate(jobNumber="   ")
+        assert upd.job_number is None
 
     def test_empty_string_full_name_raises(self):
         from app.schemas import EmployeeUpdate
@@ -229,6 +247,16 @@ class TestJobCreateSchema:
         from app.schemas import JobCreate
         job = JobCreate(job_number="J001", job_title="Software Engineer")
         assert job.job_number == "J001"
+
+    def test_job_number_is_trimmed(self):
+        from app.schemas import JobCreate
+        job = JobCreate(job_number="  J001  ", job_title="Software Engineer")
+        assert job.job_number == "J001"
+
+    def test_whitespace_only_job_number_raises(self):
+        from app.schemas import JobCreate
+        with pytest.raises(ValidationError):
+            JobCreate(job_number="   ", job_title="Software Engineer")
 
     def test_empty_job_number_raises(self):
         from app.schemas import JobCreate
