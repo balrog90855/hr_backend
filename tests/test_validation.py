@@ -247,6 +247,20 @@ class TestJobCreateSchema:
         from app.schemas import JobCreate
         job = JobCreate(job_number="J001", job_title="Software Engineer")
         assert job.job_number == "J001"
+        assert job.is_retained == 0
+
+    def test_is_retained_accepts_boolean_like_ints(self):
+        from app.schemas import JobCreate
+
+        job = JobCreate(job_number="J002", job_title="Analyst", is_retained=1)
+
+        assert job.is_retained == 1
+
+    def test_is_retained_out_of_range_raises(self):
+        from app.schemas import JobCreate
+
+        with pytest.raises(ValidationError):
+            JobCreate(job_number="J002", job_title="Analyst", is_retained=2)
 
     def test_job_number_is_trimmed(self):
         from app.schemas import JobCreate
@@ -293,6 +307,28 @@ class TestJobVacancySyncRequestSchema:
         payload = JobVacancySyncRequest(jobNumbers=[])
 
         assert payload.job_numbers == []
+
+
+class TestJobUpdateSchema:
+    def test_valid_partial_update_is_accepted(self):
+        from app.schemas import JobUpdate
+
+        payload = JobUpdate(job_title="Senior Analyst", is_retained=1)
+
+        assert payload.job_title == "Senior Analyst"
+        assert payload.is_retained == 1
+
+    def test_empty_job_title_raises(self):
+        from app.schemas import JobUpdate
+
+        with pytest.raises(ValidationError):
+            JobUpdate(job_title="")
+
+    def test_invalid_is_retained_raises(self):
+        from app.schemas import JobUpdate
+
+        with pytest.raises(ValidationError):
+            JobUpdate(is_retained=3)
 
 
 class TestLoginRequestSchema:
@@ -464,6 +500,91 @@ class TestJobsEndpoint:
             headers=_admin_headers(),
         )
         assert resp.status_code == 422
+
+    def test_create_job_requires_admin(self, api_client):
+        resp = api_client.post("/api/jobs", json={"job_number": "J003", "job_title": "Engineer"})
+
+        assert resp.status_code == 401
+
+    def test_create_job_with_admin_returns_created_job(self, api_client, monkeypatch):
+        from app.api import jobs
+
+        monkeypatch.setattr(
+            jobs,
+            "create_job",
+            lambda payload: {
+                "job_number": payload["job_number"],
+                "job_title": payload["job_title"],
+                "is_vacant": 1,
+                "is_retained": payload.get("is_retained", 0),
+            },
+        )
+
+        resp = api_client.post(
+            "/api/jobs",
+            json={"job_number": "J003", "job_title": "Engineer", "is_retained": 1},
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["job_number"] == "J003"
+        assert resp.json()["is_retained"] == 1
+
+    def test_get_job_returns_404_when_missing(self, api_client, monkeypatch):
+        from app.api import jobs
+
+        monkeypatch.setattr(jobs, "fetch_job_by_number", lambda _: None)
+
+        resp = api_client.get("/api/jobs/J999")
+
+        assert resp.status_code == 404
+
+    def test_patch_job_with_admin_updates_job(self, api_client, monkeypatch):
+        from app.api import jobs
+
+        monkeypatch.setattr(
+            jobs,
+            "update_job",
+            lambda job_number, payload: {
+                "job_number": job_number,
+                "job_title": payload.get("job_title", "Engineer"),
+                "is_vacant": 1,
+                "is_retained": payload.get("is_retained", 0),
+            },
+        )
+
+        resp = api_client.patch(
+            "/api/jobs/J003",
+            json={"job_title": "Lead Engineer", "is_retained": 1},
+            headers=_admin_headers(),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["job_title"] == "Lead Engineer"
+        assert resp.json()["is_retained"] == 1
+
+    def test_delete_job_requires_admin(self, api_client):
+        resp = api_client.delete("/api/jobs/J003")
+
+        assert resp.status_code == 401
+
+    def test_delete_job_with_admin_returns_204(self, api_client, monkeypatch):
+        from app.api import jobs
+
+        monkeypatch.setattr(jobs, "delete_job", lambda _: True)
+
+        resp = api_client.delete("/api/jobs/J003", headers=_admin_headers())
+
+        assert resp.status_code == 204
+
+    def test_delete_job_returns_404_when_missing(self, api_client, monkeypatch):
+        from app.api import jobs
+
+        monkeypatch.setattr(jobs, "delete_job", lambda _: False)
+
+        resp = api_client.delete("/api/jobs/J404", headers=_admin_headers())
+
+        assert resp.status_code == 404
 
     def test_sync_vacancy_requires_admin(self, api_client):
         resp = api_client.post("/api/jobs/sync-vacancy")

@@ -37,6 +37,19 @@ def _normalize_nomination_row(row: dict[str, Any] | None) -> dict[str, Any] | No
     return row
 
 
+def _normalize_job_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+
+    if row.get("is_vacant") is None:
+        row["is_vacant"] = 0
+
+    if row.get("is_retained") is None:
+        row["is_retained"] = 0
+
+    return row
+
+
 def _utc_now_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -115,10 +128,15 @@ def initialize_database() -> None:
                 job_number VARCHAR(255) PRIMARY KEY,
                 job_title VARCHAR(255) NOT NULL,
                 is_vacant INT DEFAULT 0,
+                is_retained INT DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )
             """)
+
+            cur.execute("SHOW COLUMNS FROM jobs LIKE 'is_retained'")
+            if cur.fetchone() is None:
+                cur.execute("ALTER TABLE jobs ADD COLUMN is_retained INT DEFAULT 0")
 
             cur.execute("""
             CREATE TABLE IF NOT EXISTS employees (
@@ -586,7 +604,7 @@ def fetch_job_by_number(job_number: str) -> dict[str, Any] | None:
             cur.execute("""
                 SELECT * FROM jobs WHERE job_number = %s LIMIT 1
             """, (job_number,))
-            return cur.fetchone()
+            return _normalize_job_row(cur.fetchone())
 
 
 def fetch_jobs(limit: int = 50, offset: int = 0, vacant_only: bool = False, search: str | None = None) -> list[dict[str, Any]]:
@@ -609,10 +627,7 @@ def fetch_jobs(limit: int = 50, offset: int = 0, vacant_only: bool = False, sear
         with conn.cursor() as cur:
             cur.execute(query, params)
             rows = cur.fetchall()
-            for row in rows:
-                if 'is_vacant' not in row or row['is_vacant'] is None:
-                    row['is_vacant'] = 0
-            return rows
+            return [_normalize_job_row(row) for row in rows]
 
 
 def bulk_create_jobs(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -628,15 +643,18 @@ def bulk_create_jobs(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
 
 def create_job(data: dict[str, Any]) -> dict[str, Any]:
     now = _utc_now_naive()
+    is_retained = int(data.get("is_retained", 0))
+
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                INSERT INTO jobs (job_number, job_title, is_vacant, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO jobs (job_number, job_title, is_vacant, is_retained, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
             """, (
                 data["job_number"],
                 data["job_title"],
                 1,
+                is_retained,
                 now,
                 now,
             ))
@@ -645,8 +663,59 @@ def create_job(data: dict[str, Any]) -> dict[str, Any]:
     sync_job_vacancy_states([data["job_number"]])
     row = fetch_job_by_number(data["job_number"])
     if row is None:
-        return {"job_number": data["job_number"], "job_title": data["job_title"], "is_vacant": 1}
+        return {
+            "job_number": data["job_number"],
+            "job_title": data["job_title"],
+            "is_vacant": 1,
+            "is_retained": is_retained,
+        }
     return row
+
+
+def update_job(job_number: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    mutable_fields = ["job_title", "is_retained"]
+    updates: list[str] = []
+    params: list[Any] = []
+
+    for field in mutable_fields:
+        if field in data:
+            updates.append(f"{field} = %s")
+            value = int(data[field]) if field == "is_retained" else data[field]
+            params.append(value)
+
+    if not updates:
+        return fetch_job_by_number(job_number)
+
+    updates.append("updated_at = %s")
+    params.append(_utc_now_naive())
+    params.append(job_number)
+
+    query = f"""
+        UPDATE jobs
+        SET {', '.join(updates)}
+        WHERE job_number = %s
+    """
+
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            affected = cur.rowcount
+        conn.commit()
+
+    if affected == 0:
+        return None
+
+    return fetch_job_by_number(job_number)
+
+
+def delete_job(job_number: str) -> bool:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM jobs WHERE job_number = %s", (job_number,))
+            deleted = cur.rowcount > 0
+        conn.commit()
+
+    return deleted
 
 
 def delete_all_jobs() -> int:

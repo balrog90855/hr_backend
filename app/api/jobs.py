@@ -2,11 +2,20 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from app.schemas import BulkJobCreateResponse, JobCreate, JobOut, JobVacancySyncRequest, MessageResponse
+from app.schemas import BulkJobCreateResponse, JobCreate, JobOut, JobUpdate, JobVacancySyncRequest, MessageResponse
 from app.security import require_admin
-from app.database import bulk_create_jobs, delete_all_jobs, fetch_jobs, sync_job_vacancy_states
+from app.database import (
+    bulk_create_jobs,
+    create_job,
+    delete_all_jobs,
+    delete_job,
+    fetch_job_by_number,
+    fetch_jobs,
+    sync_job_vacancy_states,
+    update_job,
+)
 
 router = APIRouter(tags=["jobs"])
 
@@ -27,6 +36,26 @@ def list_jobs(
     return [JobOut.model_validate(r) for r in rows]
 
 
+@router.get("/jobs/{job_number}", response_model=JobOut)
+def get_job(job_number: str) -> JobOut:
+    row = fetch_job_by_number(job_number)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JobOut.model_validate(row)
+
+
+@router.post("/jobs", response_model=JobOut, status_code=status.HTTP_201_CREATED)
+def create_job_route(
+    payload: JobCreate,
+    _authorized: None = Depends(require_admin),
+) -> JobOut:
+    try:
+        row = create_job(payload.model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to create job: {exc}") from exc
+    return JobOut.model_validate(row)
+
+
 @router.post("/jobs/bulk", response_model=BulkJobCreateResponse, status_code=status.HTTP_207_MULTI_STATUS)
 def bulk_create_jobs_route(
     payload: list[JobCreate],
@@ -38,6 +67,18 @@ def bulk_create_jobs_route(
         created=[JobOut.model_validate(r) for r in created_rows],
         errors=errors,
     )
+
+
+@router.patch("/jobs/{job_number}", response_model=JobOut)
+def update_job_route(
+    job_number: str,
+    payload: JobUpdate,
+    _authorized: None = Depends(require_admin),
+) -> JobOut:
+    row = update_job(job_number, payload.model_dump(exclude_unset=True))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return JobOut.model_validate(row)
 
 
 @router.post("/jobs/sync-vacancy", response_model=MessageResponse)
@@ -60,3 +101,14 @@ def delete_all_jobs_route(
 ) -> MessageResponse:
     count = delete_all_jobs()
     return MessageResponse(detail=f"Deleted {count} job(s)")
+
+
+@router.delete("/jobs/{job_number}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_job_route(
+    job_number: str,
+    _authorized: None = Depends(require_admin),
+) -> Response:
+    deleted = delete_job(job_number)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

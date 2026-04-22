@@ -49,11 +49,13 @@ class JobOut(BaseModel):
     job_number: str
     job_title: str
     is_vacant: int
+    is_retained: int = 0
 
 
 class JobCreate(BaseModel):
     job_number: str = Field(min_length=1, max_length=50)
     job_title: str = Field(min_length=1, max_length=200)
+    is_retained: int = Field(default=0, ge=0, le=1)
 
     @field_validator("job_number", mode="before")
     @classmethod
@@ -64,6 +66,11 @@ class JobCreate(BaseModel):
 class BulkJobCreateResponse(BaseModel):
     created: list[JobOut]
     errors: list[dict[str, Any]]
+
+
+class JobUpdate(BaseModel):
+    job_title: str | None = Field(default=None, min_length=1, max_length=200)
+    is_retained: int | None = Field(default=None, ge=0, le=1)
 
 
 class JobVacancySyncRequest(BaseModel):
