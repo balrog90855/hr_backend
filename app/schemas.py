@@ -43,6 +43,8 @@ class EmployeeOut(BaseModel):
     service: str | None = None
     grade: str | None = None
     appraisal_due_date: str | None = None
+    expected_start: str | None = None
+    fad: str | None = None
 
 
 class JobOut(BaseModel):
@@ -115,6 +117,8 @@ class EmployeeCreate(BaseModel):
     service: str | None = None
     grade: str | None = None
     appraisal_due_date: str | None = Field(default=None, alias="appraisalDueDate")
+    expected_start: str | None = Field(default=None, alias="expectedStart")
+    fad: str | None = Field(default=None, alias="fad")
 
     @field_validator("full_name", "team", "location", mode="before")
     @classmethod
@@ -141,6 +145,8 @@ class EmployeeUpdate(BaseModel):
     service: str | None = None
     grade: str | None = None
     appraisal_due_date: str | None = Field(default=None, alias="appraisalDueDate")
+    expected_start: str | None = Field(default=None, alias="expectedStart")
+    fad: str | None = Field(default=None, alias="fad")
 
     @field_validator("job_number", mode="before")
     @classmethod

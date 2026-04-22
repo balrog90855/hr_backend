@@ -150,11 +150,21 @@ def initialize_database() -> None:
                 service VARCHAR(255),
                 grade VARCHAR(255),
                 appraisal_due_date DATETIME,
+                expected_start DATE,
+                fad DATE,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (job_number) REFERENCES jobs(job_number) ON DELETE SET NULL
             )
             """)
+
+            cur.execute("SHOW COLUMNS FROM employees LIKE 'expected_start'")
+            if cur.fetchone() is None:
+                cur.execute("ALTER TABLE employees ADD COLUMN expected_start DATE")
+
+            cur.execute("SHOW COLUMNS FROM employees LIKE 'fad'")
+            if cur.fetchone() is None:
+                cur.execute("ALTER TABLE employees ADD COLUMN fad DATE")
 
             cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -455,6 +465,10 @@ def fetch_employees(limit: int = 50, offset: int = 0, status: str | None = None,
             for row in rows:
                 if row.get('appraisal_due_date'):
                     row['appraisal_due_date'] = row['appraisal_due_date'].strftime('%Y-%m-%d')
+                if row.get('expected_start'):
+                    row['expected_start'] = row['expected_start'].strftime('%Y-%m-%d')
+                if row.get('fad'):
+                    row['fad'] = row['fad'].strftime('%Y-%m-%d')
             return rows
 
 
@@ -468,8 +482,13 @@ def fetch_employee_by_id(employee_id: str) -> dict[str, Any] | None:
                 WHERE e.id = %s LIMIT 1
             """, (employee_id,))
             row = cur.fetchone()
-            if row and row.get('appraisal_due_date'):
-                row['appraisal_due_date'] = row['appraisal_due_date'].strftime('%Y-%m-%d')
+            if row:
+                if row.get('appraisal_due_date'):
+                    row['appraisal_due_date'] = row['appraisal_due_date'].strftime('%Y-%m-%d')
+                if row.get('expected_start'):
+                    row['expected_start'] = row['expected_start'].strftime('%Y-%m-%d')
+                if row.get('fad'):
+                    row['fad'] = row['fad'].strftime('%Y-%m-%d')
             return row
 
 
@@ -484,9 +503,10 @@ def _create_employee_record(data: dict[str, Any], sync_vacancy: bool) -> dict[st
                 INSERT INTO employees (
                     id, job_number, full_name, team, location,
                     avatar_url, status, service, grade, appraisal_due_date,
+                    expected_start, fad,
                     created_at, updated_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 employee_id,
                 job_number,
@@ -498,6 +518,8 @@ def _create_employee_record(data: dict[str, Any], sync_vacancy: bool) -> dict[st
                 data.get("service"),
                 data.get("grade"),
                 data.get("appraisal_due_date"),
+                data.get("expected_start"),
+                data.get("fad"),
                 now,
                 now,
             ))
